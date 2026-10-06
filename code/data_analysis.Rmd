@@ -1,0 +1,239 @@
+---
+title: "Are Americans Actually Better Off Than 10 Years Ago?"
+author: "Simon Zhang"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(readr)
+library(tidyr)
+library(ggplot2)
+
+economic_data <- read_csv(
+  "../data/processed_data/wages_inflation_clean.csv",
+  show_col_types = FALSE
+)
+
+glimpse(economic_data)
+```
+```{r}
+annual_data <- economic_data |>
+  mutate(
+    year = as.integer(format(date, "%Y"))
+  ) |>
+  group_by(year) |>
+  summarise(
+    hourly_wage = mean(hourly_wage, na.rm = TRUE),
+    cpi = mean(cpi, na.rm = TRUE),
+    wage_index = mean(wage_index, na.rm = TRUE),
+    price_index = mean(price_index, na.rm = TRUE),
+    real_wage_index = mean(real_wage_index, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+annual_data
+```
+
+```{r}
+wage_price_plot_data <- annual_data |>
+  select(
+    year,
+    wage_index,
+    price_index
+  ) |>
+  pivot_longer(
+    cols = c(wage_index, price_index),
+    names_to = "series",
+    values_to = "index"
+  ) |>
+  mutate(
+    series = recode(
+      series,
+      wage_index = "Nominal hourly wage",
+      price_index = "Consumer prices"
+    )
+  )
+```
+
+```{r}
+p1 <- ggplot(
+  wage_price_plot_data,
+  aes(
+    x = year,
+    y = index,
+    linetype = series
+  )
+) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Wages and Prices Since 2015",
+    subtitle = "2015 average = 100",
+    x = "Year",
+    y = "Index (2015 = 100)",
+    linetype = NULL
+  ) +
+  scale_x_continuous(
+    breaks = 2015:2025
+  ) +
+  theme_minimal()
+
+p1
+```
+
+```{r}
+ggsave(
+  "../figures/wages_vs_prices.png",
+  p1,
+  width = 9,
+  height = 6,
+  dpi = 300
+)
+```
+
+```{r}
+p2 <- ggplot(
+  annual_data,
+  aes(
+    x = year,
+    y = real_wage_index
+  )
+) +
+  geom_hline(
+    yintercept = 100,
+    linetype = "dashed"
+  ) +
+  geom_line(
+    linewidth = 1.1
+  ) +
+  geom_point(
+    size = 2.5
+  ) +
+  labs(
+    title = "Real Hourly Wages Since 2015",
+    subtitle = "Nominal wages adjusted for consumer prices; 2015 = 100",
+    x = "Year",
+    y = "Real Wage Index (2015 = 100)"
+  ) +
+  scale_x_continuous(
+    breaks = 2015:2025
+  ) +
+  theme_minimal()
+
+p2
+```
+
+```{r}
+ggsave(
+  "../figures/real_wage_index.png",
+  p2,
+  width = 9,
+  height = 6,
+  dpi = 300
+)
+```
+
+```{r}
+calculate_growth <- function(start_year, end_year, period_name) {
+
+  start <- annual_data |>
+    filter(year == start_year)
+
+  end <- annual_data |>
+    filter(year == end_year)
+
+  tibble(
+    period = period_name,
+
+    nominal_wage_growth =
+      (end$hourly_wage / start$hourly_wage - 1) * 100,
+
+    price_growth =
+      (end$cpi / start$cpi - 1) * 100,
+
+    real_wage_growth =
+      (end$real_wage_index / start$real_wage_index - 1) * 100
+  )
+}
+```
+
+```{r}
+period_growth <- bind_rows(
+  calculate_growth(
+    2015,
+    2019,
+    "2015–2019"
+  ),
+  calculate_growth(
+    2019,
+    2022,
+    "2019–2022"
+  ),
+  calculate_growth(
+    2022,
+    2025,
+    "2022–2025"
+  )
+)
+
+period_growth
+```
+
+```{r}
+period_plot_data <- period_growth |>
+  pivot_longer(
+    cols = c(
+      nominal_wage_growth,
+      price_growth,
+      real_wage_growth
+    ),
+    names_to = "measure",
+    values_to = "growth"
+  ) |>
+  mutate(
+    measure = recode(
+      measure,
+      nominal_wage_growth = "Nominal wage growth",
+      price_growth = "Price growth",
+      real_wage_growth = "Real wage growth"
+    )
+  )
+```
+
+```{r}
+p3 <- ggplot(
+  period_plot_data,
+  aes(
+    x = period,
+    y = growth,
+    fill = measure
+  )
+) +
+  geom_col(
+    position = "dodge"
+  ) +
+  geom_hline(
+    yintercept = 0
+  ) +
+  labs(
+    title = "Wage Growth, Inflation, and Purchasing Power",
+    subtitle = "Percent change across three periods",
+    x = NULL,
+    y = "Percent Change (%)",
+    fill = NULL
+  ) +
+  theme_minimal()
+
+p3
+```
+
+```{r}
+ggsave(
+  "../figures/wage_growth_by_period.png",
+  p3,
+  width = 9,
+  height = 6,
+  dpi = 300
+)
+```
